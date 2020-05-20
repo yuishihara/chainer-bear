@@ -3,7 +3,19 @@ import chainer.functions as F
 import chainer.links as L
 
 
-class MujocoActor(chainer.Chain):
+class _Actor(chainer.Chain):
+    def save(self, path):
+        if path.exists():
+            raise ValueError('File already exist')
+        chainer.serializers.save_npz(path.resolve(), self)
+
+    def load(self, path):
+        if not path.exists():
+            raise ValueError('File {} not found'.format(path))
+        chainer.serializers.load_npz(path.resolve(), self)
+
+
+class MujocoActor(_Actor):
     def __init__(self, state_dim, action_dim):
         super(MujocoActor, self).__init__()
         with self.init_scope():
@@ -58,7 +70,7 @@ class MujocoActor(chainer.Chain):
         return F.tanh(z), z
 
 
-class VAEActor(chainer.Chain):
+class VAEActor(_Actor):
     def __init__(self, state_dim, action_dim, latent_dim):
         super(VAEActor, self).__init__()
         self._state_dim = state_dim

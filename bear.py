@@ -53,7 +53,7 @@ class OptimizableLagrangeMultiplier(chainer.Chain):
 class BEAR(object):
     def __init__(self, critic_builder, actor_builder, vae_builder, state_dim, action_dim, *,
                  gamma=0.99, tau=0.5*1e-3, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
-                 num_q_ensembles=2, num_mmd_actions=5, batch_size=100, device=-1):
+                 num_q_ensembles=2, num_mmd_samples=5, batch_size=100, device=-1):
         self._logger = logging.getLogger(self.__class__.__name__)
 
         self._q_ensembles = []
@@ -101,7 +101,7 @@ class BEAR(object):
         self._lambda = lmb
         self._epsilon = epsilon
         self._num_q_ensembles = num_q_ensembles
-        self._num_mmd_actions = num_mmd_actions
+        self._num_mmd_samples = num_mmd_samples
         self._mmd_sigma = mmd_sigma
         delta_conf = 0.1
         self._stddev_coeff = stddev_coeff * \
@@ -126,6 +126,23 @@ class BEAR(object):
         self._update_all_target_networks(tau=self._tau)
 
         self._num_iterations += 1
+
+    def compute_action(self, s):
+        with chainer.using_config('enable_backprop', False), chainer.using_config('train', False):
+            s = np.float32(s)
+            if s.ndim == 1:
+                s = np.reshape(s, newshape=(1, ) + s.shape)
+            state = chainer.Variable(s)
+            if not self._device < 0:
+                state.to_gpu()
+            a = self._pi(state)
+            if not self._device < 0:
+                a.to_cpu()
+
+            if a.shape[0] == 1:
+                return np.squeeze(a.data, axis=0)
+            else:
+                return a.data
 
     def save_models(self, outdir, prefix):
         for index, q_func in enumerate(self._q_ensembles):
@@ -221,24 +238,24 @@ class BEAR(object):
 
         (s, a, _, _, _) = batch
         _, raw_sampled_actions = self._vae._decode_multiple(
-            s, decode_num=self._num_mmd_actions)
+            s, decode_num=self._num_mmd_samples)
         pi_actions, raw_pi_actions = self._pi._sample_multiple(
-            s, sample_num=self._num_mmd_actions)
+            s, sample_num=self._num_mmd_samples)
 
-        mmd_loss = self._compute_gaussian_mmd(
-            raw_sampled_actions, raw_pi_actions, self._mmd_sigma)
+        mmd_loss = BEAR._compute_gaussian_mmd(
+            raw_sampled_actions, raw_pi_actions, sigma=self._mmd_sigma)
 
         s_hat = F.expand_dims(s, axis=0)
-        s_hat = F.repeat(s_hat, repeats=self._num_mmd_actions, axis=0)
-        s_hat = F.reshape(s_hat, shape=(self._batch_size * self._num_mmd_actions,
+        s_hat = F.repeat(s_hat, repeats=self._num_mmd_samples, axis=0)
+        s_hat = F.reshape(s_hat, shape=(self._batch_size * self._num_mmd_samples,
                                         s.shape[-1]))
         a_hat = F.transpose(pi_actions, axes=(1, 0, 2))
-        a_hat = F.reshape(a_hat, shape=(self._batch_size * self._num_mmd_actions,
+        a_hat = F.reshape(a_hat, shape=(self._batch_size * self._num_mmd_samples,
                                         a.shape[-1]))
 
         q_values = F.stack([q(s_hat, a_hat) for q in self._q_ensembles])
         q_values = F.reshape(q_values, shape=(
-            self._num_q_ensembles, self._num_mmd_actions * self._batch_size, 1))
+            self._num_q_ensembles, self._num_mmd_samples * self._batch_size, 1))
         q_values = F.mean(q_values, axis=1)
         q_stddev = self._compute_stddev(x=q_values, axis=0, keepdims=False)
 
@@ -246,7 +263,7 @@ class BEAR(object):
 
         assert q_min.shape == q_stddev.shape
 
-        if self._num_iterations > 10000:
+        if self._num_iterations > 100000:
             pi_loss = F.mean(-q_min +
                              q_stddev * self._stddev_coeff +
                              self._lagrange_multiplier.exp() * mmd_loss)
