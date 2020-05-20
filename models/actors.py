@@ -13,11 +13,18 @@ class MujocoActor(chainer.Chain):
             self._linear_mean = L.Linear(in_size=300, out_size=action_dim)
             self._linear_ln_var = L.Linear(in_size=300, out_size=action_dim)
 
-    def __call__(self, s):
-        action, _ = self.sample(s)
-        return action
+        self._action_dim = action_dim
 
-    def sample(self, s):
+    def __call__(self, s):
+        h = self._linear1(s)
+        h = F.relu(h)
+        h = self._linear2(h)
+        h = F.relu(h)
+
+        mean = self._linear_mean(h)
+        return F.tanh(mean)
+
+    def _sample(self, s):
         h = self._linear1(s)
         h = F.relu(h)
         h = self._linear2(h)
@@ -28,7 +35,7 @@ class MujocoActor(chainer.Chain):
         z = F.gaussian(mean, ln_var)
         return F.tanh(z), z
 
-    def sample_multiple(self, s, sample_num):
+    def _sample_multiple(self, s, sample_num):
         h = self._linear1(s)
         h = F.relu(h)
         h = self._linear2(h)
@@ -37,11 +44,12 @@ class MujocoActor(chainer.Chain):
         mean = self._linear_mean(h)
         ln_var = self._linear_ln_var(h)
 
+        batch_size = s.shape[0]
         stddev = F.sqrt(F.exp(ln_var))
         xp = chainer.backend.get_array_module(s)
         noise = chainer.Variable(xp.random.normal(loc=0,
                                                   scale=1,
-                                                  size=(s.shape[0], sample_num, s.shape[1])))
+                                                  size=(batch_size, sample_num, self._action_dim)))
         noise = F.cast(noise, typ=xp.float32)
 
         z = F.expand_dims(mean, axis=1) + \

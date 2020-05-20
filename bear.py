@@ -1,5 +1,7 @@
 import numpy as np
 
+import pathlib
+
 import logging
 
 import chainer
@@ -37,10 +39,20 @@ class OptimizableLagrangeMultiplier(chainer.Chain):
         self._lagrange_multiplier.data = xp.clip(
             self._lagrange_multiplier.data, min_value, max_value)
 
+    def save(self, path):
+        if path.exists():
+            raise ValueError('File already exist')
+        chainer.serializers.save_npz(path.resolve(), self)
+
+    def load(self, path):
+        if not path.exists():
+            raise ValueError('File {} not found'.format(path))
+        chainer.serializers.load_npz(path.resolve(), self)
+
 
 class BEAR(object):
     def __init__(self, critic_builder, actor_builder, vae_builder, state_dim, action_dim, *,
-                 gamma=0.99, tau=0.5*1e-3, lmb=0.75, epsilon=0.05, stddev_coeff=0.4,
+                 gamma=0.99, tau=0.5*1e-3, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
                  num_q_ensembles=2, num_mmd_actions=5, batch_size=100, device=-1):
         self._logger = logging.getLogger(self.__class__.__name__)
 
@@ -90,6 +102,7 @@ class BEAR(object):
         self._epsilon = epsilon
         self._num_q_ensembles = num_q_ensembles
         self._num_mmd_actions = num_mmd_actions
+        self._mmd_sigma = mmd_sigma
         delta_conf = 0.1
         self._stddev_coeff = stddev_coeff * \
             np.sqrt((1 - delta_conf) / delta_conf)
@@ -114,32 +127,90 @@ class BEAR(object):
 
         self._num_iterations += 1
 
+    def save_models(self, outdir, prefix):
+        for index, q_func in enumerate(self._q_ensembles):
+            q_filepath = pathlib.Path(
+                outdir, 'q{}_iter-{}'.format(index, prefix))
+            q_func.to_cpu()
+            q_func.save(q_filepath)
+            if not self._device < 0:
+                q_func.to_device(device=self._device)
+
+        pi_filepath = pathlib.Path(outdir, 'pi_iter-{}'.format(prefix))
+        vae_filepath = pathlib.Path(outdir, 'vae_iter-{}'.format(prefix))
+        lagrange_filepath = pathlib.Path(
+            outdir, 'lagrange_iter-{}'.format(prefix))
+
+        self._pi.to_cpu()
+        self._vae.to_cpu()
+        self._lagrange_multiplier.to_cpu()
+
+        self._pi.save(pi_filepath)
+        self._vae.save(vae_filepath)
+        self._lagrange_multiplier.save(lagrange_filepath)
+
+        if not self._device < 0:
+            self._pi.to_device(device=self._device)
+            self._vae.to_device(device=self._device)
+            self._lagrange_multiplier.to_device(device=self._device)
+
+    def load_models(self, q_param_filepaths, pi_filepath, vae_filepath, lagrange_filepath):
+        for q_func, q_filepath in zip(self._q_ensembles, q_param_filepaths):
+            q_func.to_cpu()
+            q_func.load(q_filepath)
+            if not self._device < 0:
+                q_func.to_device(device=self._device)
+
+        self._pi.to_cpu()
+        self._vae.to_cpu()
+        self._lagrange_multiplier.to_cpu()
+
+        if pi_filepath:
+            self._pi.load(pi_filepath)
+        if vae_filepath:
+            self._vae.load(vae_filepath)
+        if lagrange_filepath:
+            self._lagrange_multiplier.load(lagrange_filepath)
+
+        if not self._device < 0:
+            self._pi.to_device(device=self._device)
+            self._vae.to_device(device=self._device)
+            self._lagrange_multiplier.to_device(device=self._device)
+
     def _q_update(self, batch):
         (s, a, _, _, _) = batch
-        target_q_value = self._compoute_target_q_value(batch)
+        target_q_value = self._compute_target_q_value(batch)
 
+        loss = 0.0
         for q, optimizer in zip(self._q_ensembles, self._q_optimizers):
-            loss = F.mean_squared_error(target_q_value, q(s, a))
-            optimizer.target.cleargrads()
-            loss.backward()
-            loss.unchain_backward()
-            optimizer.update()
+            loss += F.mean_squared_error(target_q_value, q(s, a))
+        optimizer.target.cleargrads()
+        loss.backward()
+        loss.unchain_backward()
+        optimizer.update()
 
-    def _compoute_target_q_value(self, batch, *, num_action_samples=10):
-        (_, _, r, s_next, non_terminal) = batch
-
+    def _compute_target_q_value(self, batch, *, num_action_samples=10):
         with chainer.using_config('train', False), \
                 chainer.using_config('enable_backprop', False):
-            s_next_rep = F.repeat(
-                x=s_next, repeats=num_action_samples, axis=0)
-            a_next_rep = self._target_pi.sample(s_next_rep)
+            (_, _, r, s_next, non_terminal) = batch
+            r = F.reshape(r, shape=(*r.shape, 1))
+            non_terminal = F.rehsape(
+                non_terminal, shape=(*non_terminal.shape, 1))
 
+            s_next_rep = F.repeat(x=s_next, repeats=num_action_samples, axis=0)
+            a_next_rep = self._target_pi.sample(s_next_rep)
             q_values = F.stack([q_target(s_next_rep, a_next_rep)
                                 for q_target in self._target_q_ensembles])
-            weighted_q_minmax = self._lambda * F.min(q_values, axis=0, keepdims=True) \
-                + (1 - self._lambda) * F.max(q_values, axis=0, keepdims=True)
+            assert q_values.shape == (
+                self._num_q_ensembles, self._batch_size * num_action_samples, 1)
+
+            weighted_q_minmax = self._lambda * F.min(q_values, axis=0) \
+                + (1 - self._lambda) * F.max(q_values, axis=0)
+            assert weighted_q_minmax.shape == (
+                self._batch_size * num_action_samples, 1)
             next_q_value = F.max(
-                F.reshape(weighted_q_minmax, shape=(self._batch_size, -1)), keepdims=True)
+                F.reshape(weighted_q_minmax, shape=(self._batch_size, -1)), axis=1, keepdims=True)
+            assert next_q_value.shape == (self._batch_size, 1)
             target_q_value = r + self._gamma * next_q_value * non_terminal
             target_q_value.unchain()
             assert target_q_value.shape == (self._batch_size, 1)
@@ -148,21 +219,22 @@ class BEAR(object):
     def _policy_update(self, batch):
         self._train_vae(batch)
 
+        (s, a, _, _, _) = batch
         _, raw_sampled_actions = self._vae._decode_multiple(
             s, decode_num=self._num_mmd_actions)
         pi_actions, raw_pi_actions = self._pi._sample_multiple(
             s, sample_num=self._num_mmd_actions)
 
         mmd_loss = self._compute_gaussian_mmd(
-            raw_sampled_actions, raw_pi_actions)
+            raw_sampled_actions, raw_pi_actions, self._mmd_sigma)
 
         s_hat = F.expand_dims(s, axis=0)
         s_hat = F.repeat(s_hat, repeats=self._num_mmd_actions, axis=0)
-        s_hat = F.reshape(s_hat, shape(self._batch_size *
-                                       self._num_mmd_actions, s.shape[-1]))
+        s_hat = F.reshape(s_hat, shape=(self._batch_size * self._num_mmd_actions,
+                                        s.shape[-1]))
         a_hat = F.transpose(pi_actions, axes=(1, 0, 2))
-        a_hat = F.reshape(a_hat, shape(self._batch_size *
-                                       self._num_mmd_actions, a.shape[-1]))
+        a_hat = F.reshape(a_hat, shape=(self._batch_size * self._num_mmd_actions,
+                                        a.shape[-1]))
 
         q_values = F.stack([q(s_hat, a_hat) for q in self._q_ensembles])
         q_values = F.reshape(q_values, shape=(
@@ -232,7 +304,7 @@ class BEAR(object):
                 (1.0 - tau) * target_param.data
 
     @staticmethod
-    def _compute_gaussian_mmd(samples1, samples2, *, sigma=0.2):
+    def _compute_gaussian_mmd(samples1, samples2, *, sigma=20.0):
         n = samples1.shape[1]
         m = samples2.shape[1]
 
@@ -262,7 +334,7 @@ if __name__ == "__main__":
                 diff = 0.0
                 for k in range(s1.shape[2]):
                     diff += (s1[0][i][k] - s2[0][j][k]) ** 2
-                kernel_sum += np.exp(-diff / 2.0)
+                kernel_sum += np.exp(-diff / (2.0 * 20.0))
         return kernel_sum
 
     samples1 = np.array([[[1, 1, 1], [2, 2, 2], [3, 3, 3]]], dtype=np.float32)
@@ -278,7 +350,7 @@ if __name__ == "__main__":
     expected_mmd = expected_kxx/(n*n) - 2.0*expected_kxy / \
         (m*n) + expected_kyy/(m*m)
     expected_mmd = np.sqrt(expected_mmd + 1e-6)
-    actual_mmd = BEAR._compute_gaussian_mmd(samples1, samples2, sigma=1.0)
+    actual_mmd = BEAR._compute_gaussian_mmd(samples1, samples2, sigma=20.0)
     actual_mmd = actual_mmd.array
     print('actual mmd: ', actual_mmd)
     print('expected mmd: ', expected_mmd)
