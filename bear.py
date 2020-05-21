@@ -53,7 +53,7 @@ class OptimizableLagrangeMultiplier(chainer.Chain):
 class BEAR(object):
     def __init__(self, critic_builder, actor_builder, vae_builder, state_dim, action_dim, *,
                  gamma=0.99, tau=0.5*1e-3, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
-                 num_q_ensembles=2, num_mmd_samples=5, batch_size=100, device=-1):
+                 warmup_iterations=100000, num_q_ensembles=2, num_mmd_samples=5, batch_size=100, device=-1):
         self._logger = logging.getLogger(self.__class__.__name__)
 
         self._q_ensembles = []
@@ -113,6 +113,7 @@ class BEAR(object):
         self._initialized = False
 
         self._num_iterations = 0
+        self._warmup_iterations = warmup_iterations
 
     def train(self, iterator, **kwargs):
         if not self._initialized:
@@ -242,8 +243,9 @@ class BEAR(object):
         pi_actions, raw_pi_actions = self._pi._sample_multiple(
             s, sample_num=self._num_mmd_samples)
 
-        mmd_loss = BEAR._compute_gaussian_mmd(
+        mmd_loss = self._compute_gaussian_mmd(
             raw_sampled_actions, raw_pi_actions, sigma=self._mmd_sigma)
+        assert mmd_loss.shape == (self._batch_size, 1)
 
         s_hat = F.expand_dims(s, axis=0)
         s_hat = F.repeat(s_hat, repeats=self._num_mmd_samples, axis=0)
@@ -263,7 +265,7 @@ class BEAR(object):
 
         assert q_min.shape == q_stddev.shape
 
-        if self._num_iterations > 100000:
+        if self._num_iterations > self._warmup_iterations:
             pi_loss = F.mean(-q_min +
                              q_stddev * self._stddev_coeff +
                              self._lagrange_multiplier.exp() * mmd_loss)
@@ -320,42 +322,49 @@ class BEAR(object):
             target_param.data = tau * origin_param.data + \
                 (1.0 - tau) * target_param.data
 
-    @staticmethod
-    def _compute_gaussian_mmd(samples1, samples2, *, sigma=20.0):
+    def _compute_gaussian_mmd(self, samples1, samples2, *, sigma=20.0):
         n = samples1.shape[1]
         m = samples2.shape[1]
 
         k_xx = F.expand_dims(x=samples1, axis=2) - \
             F.expand_dims(x=samples1, axis=1)
-        sum_k_xx = F.sum(F.exp(-F.sum(k_xx**2, axis=-1) / (2.0*sigma)))
+        sum_k_xx = F.sum(
+            F.exp(-F.sum(k_xx**2, axis=-1, keepdims=True) / (2.0*sigma)), axis=(1, 2))
 
         k_xy = F.expand_dims(x=samples1, axis=2) - \
             F.expand_dims(x=samples2, axis=1)
-        sum_k_xy = F.sum(F.exp(-F.sum(k_xy**2, axis=-1) / (2.0*sigma)))
+        sum_k_xy = F.sum(
+            F.exp(-F.sum(k_xy**2, axis=-1, keepdims=True) / (2.0*sigma)), axis=(1, 2))
 
         k_yy = F.expand_dims(x=samples2, axis=2) - \
             F.expand_dims(x=samples2, axis=1)
-        sum_k_yy = F.sum(F.exp(-F.sum(k_yy**2, axis=-1) / (2.0*sigma)))
+        sum_k_yy = F.sum(
+            F.exp(-F.sum(k_yy**2, axis=-1, keepdims=True) / (2.0*sigma)), axis=(1, 2))
 
-        mmd_squared = sum_k_xx / (n*n) - 2.0 * sum_k_xy / \
-            (m*n) + sum_k_yy / (m*m)
+        mmd_squared = \
+            sum_k_xx / (n*n) - 2.0 * sum_k_xy / (m*n) + sum_k_yy / (m*m)
 
         return F.sqrt(mmd_squared + 1e-6)
 
 
 if __name__ == "__main__":
     def _compute_sum_gaussian_kernel(s1, s2):
-        kernel_sum = 0.0
-        for i in range(s1.shape[1]):
-            for j in range(s2.shape[1]):
-                diff = 0.0
-                for k in range(s1.shape[2]):
-                    diff += (s1[0][i][k] - s2[0][j][k]) ** 2
-                kernel_sum += np.exp(-diff / (2.0 * 20.0))
-        return kernel_sum
+        gaussian_kernel = []
+        for b in range(s1.shape[0]):
+            kernel_sum = 0.0
+            for i in range(s1.shape[1]):
+                for j in range(s2.shape[1]):
+                    diff = 0.0
+                    for k in range(s1.shape[2]):
+                        diff += (s1[b][i][k] - s2[b][j][k]) ** 2
+                    kernel_sum += np.exp(-diff / (2.0 * 20.0))
+            gaussian_kernel.append([kernel_sum])
+        return np.array(gaussian_kernel)
 
-    samples1 = np.array([[[1, 1, 1], [2, 2, 2], [3, 3, 3]]], dtype=np.float32)
-    samples2 = np.array([[[0, 0, 0], [1, 1, 1]]], dtype=np.float32)
+    samples1 = np.array([[[1, 1, 1], [2, 2, 2], [3, 3, 3]],
+                         [[4, 4, 4], [2, 2, 2], [3, 3, 3]]], dtype=np.float32)
+    samples2 = np.array([[[0, 0, 0], [1, 1, 1]],
+                         [[1, 2, 3], [1, 1, 1]]], dtype=np.float32)
 
     n = samples1.shape[1]
     m = samples2.shape[1]
@@ -364,14 +373,21 @@ if __name__ == "__main__":
     expected_kxy = _compute_sum_gaussian_kernel(samples1, samples2)
     expected_kyy = _compute_sum_gaussian_kernel(samples2, samples2)
 
-    expected_mmd = expected_kxx/(n*n) - 2.0*expected_kxy / \
-        (m*n) + expected_kyy/(m*m)
+    expected_mmd = \
+        expected_kxx / (n*n) - 2.0 * expected_kxy / (m*n) + expected_kyy/(m*m)
     expected_mmd = np.sqrt(expected_mmd + 1e-6)
-    actual_mmd = BEAR._compute_gaussian_mmd(samples1, samples2, sigma=20.0)
+
+    def fake_builder(self, *args):
+        return chainer.Chain()
+
+    bear = BEAR(critic_builder=fake_builder, actor_builder=fake_builder,
+                vae_builder=fake_builder, state_dim=5, action_dim=5)
+    actual_mmd = bear._compute_gaussian_mmd(samples1, samples2, sigma=20.0)
     actual_mmd = actual_mmd.array
     print('actual mmd: ', actual_mmd)
     print('expected mmd: ', expected_mmd)
-    assert np.isclose(actual_mmd, expected_mmd)
+    assert actual_mmd.shape == (samples1.shape[0], 1)
+    assert np.all(np.isclose(actual_mmd, expected_mmd))
 
     lagrange_multiplier = OptimizableLagrangeMultiplier(initial_value=3.0)
     scaled_multiplier = lagrange_multiplier * 5
