@@ -79,11 +79,12 @@ def critic_builder(state_dim, action_dim):
 
 
 def vae_builder(state_dim, action_dim):
-    return VAEActor(state_dim=state_dim, action_dim=action_dim, latent_dim=action_dim*2)
+    return VAEActor(state_dim=state_dim, action_dim=action_dim, latent_dim=action_dim * 2)
 
 
 def load_data_as_replay_buffer(datafile):
-    return pickle.load(datafile)
+    with open(datafile, 'rb') as f:
+        return pickle.load(f)
 
 
 def start_training(args):
@@ -110,12 +111,12 @@ def start_training(args):
     replay_buffer = load_data_as_replay_buffer(args.datafile)
 
     outdir = prepare_output_dir(args.outdir, args)
-    summarydir = prepare_summary_dir(args.summarydir, args)
+    summarydir = prepare_summary_dir(args.summarydir)
     writer = SummaryWriter(logdir=summarydir)
 
     iterator = chainer.iterators.SerialIterator(
         replay_buffer, batch_size=args.batch_size)
-    for timestep in args.total_timesteps:
+    for timestep in range(args.total_timesteps):
         status = bear.train(iterator)
         if timestep % args.evaluation_interval == 0 and timestep != 0:
             _, mean, median, _ = evaluate_policy(test_env, bear)
@@ -178,7 +179,8 @@ def evaluate_policy(env, algorithm, *, n_runs=10):
 
 def load_params(bear, args):
     print('loading model params')
-    q_params = [pathlib.Path(q_params) for q_params in args.q_params]
+    q_params = [pathlib.Path(q_params)
+                for q_params in args.q_params] if args.q_params else None
     pi_params = pathlib.Path(args.pi_params) if args.pi_params else None
     vae_params = pathlib.Path(args.vae_params) if args.vae_params else None
     lagrange_params = pathlib.Path(
@@ -202,7 +204,7 @@ def main():
     parser.add_argument('--gpu', type=int, default=-1)
 
     # training data
-    parser.add_argument('--datafile', type=str, default=None)
+    parser.add_argument('--datafile', type=str, required=True)
 
     # testing
     parser.add_argument('--test-run', action='store_true')
@@ -217,7 +219,7 @@ def main():
 
     # Training parameters
     parser.add_argument('--total-timesteps', type=float, default=1000000)
-    parser.add_argument('--learning-rate', type=float, default=1.0*1e-3)
+    parser.add_argument('--learning-rate', type=float, default=1.0 * 1e-3)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--tau', type=float, default=0.005)
     parser.add_argument('--num-ensembles', type=int, default=2)

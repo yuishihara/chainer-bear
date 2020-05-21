@@ -130,3 +130,7 @@ dmypy.json
 
 # vscode
 .vscode/**
+
+# results/summary dirs
+results/**
+summaries/**
