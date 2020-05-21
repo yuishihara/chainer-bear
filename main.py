@@ -7,6 +7,7 @@ import datetime
 import os
 import sys
 import json
+import pickle
 
 import numpy as np
 
@@ -17,6 +18,8 @@ from models.actors import VAEActor, MujocoActor
 from models.critics import MujocoCritic
 
 from wrappers import NumpyFloat32Env, ScreenRenderEnv, EveryEpisodeMonitor
+
+from tensorboardX import SummaryWriter
 
 
 def build_env(args, seed=None):
@@ -59,6 +62,14 @@ def prepare_output_dir(base_dir, args, time_format='%Y-%m-%d-%H%M%S'):
     return outdir
 
 
+def prepare_summary_dir(base_dir, time_format='%Y-%m-%d-%H%M%S'):
+    time_str = datetime.datetime.now().strftime(time_format)
+    summarydir = os.path.join(base_dir, time_str)
+    create_dir_if_not_exist(summarydir)
+
+    return summarydir
+
+
 def actor_builder(state_dim, action_dim):
     return MujocoActor(state_dim=state_dim, action_dim=action_dim)
 
@@ -71,8 +82,8 @@ def vae_builder(state_dim, action_dim):
     return VAEActor(state_dim=state_dim, action_dim=action_dim, latent_dim=action_dim*2)
 
 
-def load_data_as_replay_buffer(datadir):
-    return []
+def load_data_as_replay_buffer(datafile):
+    return pickle.load(datafile)
 
 
 def start_training(args):
@@ -96,21 +107,28 @@ def start_training(args):
         device=args.gpu)
     load_params(bear, args)
 
-    replay_buffer = load_data_as_replay_buffer(args.datadir)
+    replay_buffer = load_data_as_replay_buffer(args.datafile)
 
-    prepare_output_dir(args.outdir, args)
+    outdir = prepare_output_dir(args.outdir, args)
+    summarydir = prepare_summary_dir(args.summarydir, args)
+    writer = SummaryWriter(logdir=summarydir)
 
     iterator = chainer.iterators.SerialIterator(
         replay_buffer, batch_size=args.batch_size)
     for timestep in args.total_timesteps:
-        bear.train(iterator)
+        status = bear.train(iterator)
         if timestep % args.evaluation_interval == 0 and timestep != 0:
             _, mean, median, _ = evaluate_policy(test_env, bear)
             print('mean: {mean}, median: {median}'.format(
                 mean=mean, median=median))
 
-            bear.save_models(args.outdir, prefix=str(timestep))
+            bear.save_models(outdir, prefix=str(timestep))
+            writer.add_scalars(
+                'eval_result', {'mean': mean, 'median': median}, global_step=timestep)
 
+            for (key, value) in status.items():
+                value.to_cpu()
+                writer.add_scalar(key, value.array[0], global_step=timestep)
     env.close()
     test_env.close()
 
@@ -174,6 +192,9 @@ def main():
     # output
     parser.add_argument('--outdir', type=str, default='results')
 
+    # summary dir
+    parser.add_argument('--summarydir', type=str, default='summaries')
+
     # Environment
     parser.add_argument('--env', type=str, default='Walker2d-v2')
 
@@ -181,7 +202,7 @@ def main():
     parser.add_argument('--gpu', type=int, default=-1)
 
     # training data
-    parser.add_argument('--datadir', type=str, default=None)
+    parser.add_argument('--datafile', type=str, default=None)
 
     # testing
     parser.add_argument('--test-run', action='store_true')

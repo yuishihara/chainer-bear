@@ -23,7 +23,7 @@ class OptimizableLagrangeMultiplier(chainer.Chain):
         self.clip(-5.0, 10.0)
 
     def __call__(self):
-        raise NotImplementedError('Use multiplication operator * directly')
+        return self._lagrange_multiplier
 
     def __mul__(self, other):
         return self._lagrange_multiplier * other
@@ -122,11 +122,17 @@ class BEAR(object):
 
         batch = concat_examples(iterator.next(), device=self._device)
 
-        self._q_update(batch)
-        self._policy_update(batch)
+        status = {}
+        q_update_status = self._q_update(batch)
+        policy_update_status = self._policy_update(batch)
         self._update_all_target_networks(tau=self._tau)
 
         self._num_iterations += 1
+
+        status.update(q_update_status)
+        status.update(policy_update_status)
+
+        return status
 
     def compute_action(self, s):
         with chainer.using_config('enable_backprop', False), chainer.using_config('train', False):
@@ -196,6 +202,8 @@ class BEAR(object):
             self._lagrange_multiplier.to_device(device=self._device)
 
     def _q_update(self, batch):
+        status = {}
+
         (s, a, _, _, _) = batch
         target_q_value = self._compute_target_q_value(batch)
 
@@ -206,6 +214,10 @@ class BEAR(object):
         loss.backward()
         loss.unchain_backward()
         optimizer.update()
+
+        xp = chainer.backend.get_array_module(loss)
+        status['q_loss'] = xp.array(loss.array)
+        return status
 
     def _compute_target_q_value(self, batch, *, num_action_samples=10):
         with chainer.using_config('train', False), \
@@ -235,7 +247,10 @@ class BEAR(object):
         return target_q_value
 
     def _policy_update(self, batch):
-        self._train_vae(batch)
+        status = {}
+        vae_status = self._train_vae(batch)
+
+        status.update(vae_status)
 
         (s, a, _, _, _) = batch
         _, raw_sampled_actions = self._vae._decode_multiple(
@@ -292,7 +307,18 @@ class BEAR(object):
         # Clip lagrange multiplier in range
         self._lagrange_multiplier.clip(-5.0, 10.0)
 
+        xp = chainer.backend.get_array_module(pi_loss)
+        status['pi_loss'] = xp.array(pi_loss.array)
+        status['mmd_loss'] = xp.array(mmd_loss.array)
+        status['lagrange_loss'] = xp.array(pi_loss.array)
+        status['lagrange_multiplier'] = xp.array(
+            self._lagrange_multiplier().array)
+
+        return status
+
     def _train_vae(self, batch):
+        status = {}
+
         (s, a, _, _, _) = batch
         reconstructed_action, mean, ln_var = self._vae((s, a))
         reconstruction_loss = F.mean_squared_error(reconstructed_action, a)
@@ -304,6 +330,10 @@ class BEAR(object):
         vae_loss.backward()
         vae_loss.unchain_backward()
         self._vae.optimizer.update()
+
+        xp = chainer.backend.get_array_module(vae_loss)
+        status['vae_loss'] = xp.array(vae_loss.array)
+        return status
 
     def _compute_stddev(self, x, axis=None, keepdims=False):
         # stddev = sqrt(E[X^2] - E[X]^2)
