@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import pickle
+import time
 
 import numpy as np
 
@@ -169,6 +170,7 @@ def evaluate_policy(env, algorithm, *, n_runs=10):
         episode_return = 0
         while True:
             a = algorithm.compute_action(s)
+            time.sleep(.002)  # Workaround to avoid time exception
             s, r, done, _ = env.step(a)
             episode_return += r
             if done:
