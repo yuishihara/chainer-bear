@@ -52,7 +52,7 @@ class OptimizableLagrangeMultiplier(chainer.Chain):
 
 class BEAR(object):
     def __init__(self, critic_builder, actor_builder, vae_builder, state_dim, action_dim, *,
-                 gamma=0.99, tau=0.5*1e-3, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
+                 gamma=0.99, tau=0.5 * 1e-3, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
                  warmup_iterations=100000, num_q_ensembles=2, num_mmd_samples=5, batch_size=100, device=-1):
         self._logger = logging.getLogger(self.__class__.__name__)
 
@@ -84,7 +84,7 @@ class BEAR(object):
         self._lagrange_optimizer = optimizers.Adam(alpha=1e-3)
         self._lagrange_optimizer.setup(self._lagrange_multiplier)
 
-        if 0 < device:
+        if not device < 0:
             for q_function in self._q_ensembles:
                 q_function.to_device(device=device)
 
@@ -121,7 +121,6 @@ class BEAR(object):
             self._initialized = True
 
         batch = concat_examples(iterator.next(), device=self._device)
-
         status = {}
         q_update_status = self._q_update(batch)
         policy_update_status = self._policy_update(batch)
@@ -179,9 +178,10 @@ class BEAR(object):
             self._lagrange_multiplier.to_device(device=self._device)
 
     def load_models(self, q_param_filepaths, pi_filepath, vae_filepath, lagrange_filepath):
-        for q_func, q_filepath in zip(self._q_ensembles, q_param_filepaths):
+        for index, q_func in enumerate(self._q_ensembles):
             q_func.to_cpu()
-            q_func.load(q_filepath)
+            if q_param_filepaths:
+                q_func.load(q_param_filepaths[index])
             if not self._device < 0:
                 q_func.to_device(device=self._device)
 
@@ -229,11 +229,11 @@ class BEAR(object):
                 chainer.using_config('enable_backprop', False):
             (_, _, r, s_next, non_terminal) = batch
             r = F.reshape(r, shape=(*r.shape, 1))
-            non_terminal = F.rehsape(
+            non_terminal = F.reshape(
                 non_terminal, shape=(*non_terminal.shape, 1))
 
             s_next_rep = F.repeat(x=s_next, repeats=num_action_samples, axis=0)
-            a_next_rep = self._target_pi.sample(s_next_rep)
+            a_next_rep, _ = self._target_pi._sample(s_next_rep)
             q_values = F.stack([q_target(s_next_rep, a_next_rep)
                                 for q_target in self._target_q_ensembles])
             assert q_values.shape == (
@@ -286,9 +286,9 @@ class BEAR(object):
         assert q_min.shape == q_stddev.shape
 
         if self._num_iterations > self._warmup_iterations:
-            pi_loss = F.mean(-q_min +
-                             q_stddev * self._stddev_coeff +
-                             self._lagrange_multiplier.exp() * mmd_loss)
+            pi_loss = F.mean(-q_min
+                             + q_stddev * self._stddev_coeff
+                             + self._lagrange_multiplier.exp() * mmd_loss)
         else:
             pi_loss = F.mean(self._lagrange_multiplier.exp() * mmd_loss)
 
@@ -299,9 +299,9 @@ class BEAR(object):
         self._pi_optimizer.update()
 
         # Update lagrange multiplier
-        lagrange_loss = -F.mean(-q_min +
-                                q_stddev * self._stddev_coeff +
-                                self._lagrange_multiplier.exp() * (mmd_loss - self._epsilon))
+        lagrange_loss = -F.mean(-q_min
+                                + q_stddev * self._stddev_coeff
+                                + self._lagrange_multiplier.exp() * (mmd_loss - self._epsilon))
         self._lagrange_optimizer.target.cleargrads()
         lagrange_loss.backward()
         self._lagrange_optimizer.update()
@@ -314,7 +314,7 @@ class BEAR(object):
 
         xp = chainer.backend.get_array_module(pi_loss)
         status['pi_loss'] = xp.array(pi_loss.array)
-        status['mmd_loss'] = xp.array(mmd_loss.array)
+        status['mmd_loss'] = xp.mean(xp.array(mmd_loss.array))
         status['lagrange_loss'] = xp.array(pi_loss.array)
         status['lagrange_multiplier'] = xp.array(
             self._lagrange_multiplier().array)
@@ -334,7 +334,7 @@ class BEAR(object):
         self._vae_optimizer.target.cleargrads()
         vae_loss.backward()
         vae_loss.unchain_backward()
-        self._vae.optimizer.update()
+        self._vae_optimizer.update()
 
         xp = chainer.backend.get_array_module(vae_loss)
         status['vae_loss'] = xp.array(vae_loss.array)
@@ -349,7 +349,7 @@ class BEAR(object):
 
     def _update_all_target_networks(self, tau):
         for target_q, q in zip(self._target_q_ensembles, self._q_ensembles):
-            self._update_target_network(target_q, _q, tau)
+            self._update_target_network(target_q, q, tau)
         self._update_target_network(self._target_pi, self._pi, tau)
 
     def _update_target_network(self, target, origin, tau):
@@ -364,20 +364,20 @@ class BEAR(object):
         k_xx = F.expand_dims(x=samples1, axis=2) - \
             F.expand_dims(x=samples1, axis=1)
         sum_k_xx = F.sum(
-            F.exp(-F.sum(k_xx**2, axis=-1, keepdims=True) / (2.0*sigma)), axis=(1, 2))
+            F.exp(-F.sum(k_xx**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
         k_xy = F.expand_dims(x=samples1, axis=2) - \
             F.expand_dims(x=samples2, axis=1)
         sum_k_xy = F.sum(
-            F.exp(-F.sum(k_xy**2, axis=-1, keepdims=True) / (2.0*sigma)), axis=(1, 2))
+            F.exp(-F.sum(k_xy**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
         k_yy = F.expand_dims(x=samples2, axis=2) - \
             F.expand_dims(x=samples2, axis=1)
         sum_k_yy = F.sum(
-            F.exp(-F.sum(k_yy**2, axis=-1, keepdims=True) / (2.0*sigma)), axis=(1, 2))
+            F.exp(-F.sum(k_yy**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
         mmd_squared = \
-            sum_k_xx / (n*n) - 2.0 * sum_k_xy / (m*n) + sum_k_yy / (m*m)
+            sum_k_xx / (n * n) - 2.0 * sum_k_xy / (m * n) + sum_k_yy / (m * m)
 
         return F.sqrt(mmd_squared + 1e-6)
 
@@ -409,7 +409,8 @@ if __name__ == "__main__":
     expected_kyy = _compute_sum_gaussian_kernel(samples2, samples2)
 
     expected_mmd = \
-        expected_kxx / (n*n) - 2.0 * expected_kxy / (m*n) + expected_kyy/(m*m)
+        expected_kxx / (n * n) - 2.0 * expected_kxy / \
+        (m * n) + expected_kyy / (m * m)
     expected_mmd = np.sqrt(expected_mmd + 1e-6)
 
     def fake_builder(self, *args):

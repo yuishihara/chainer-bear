@@ -78,14 +78,14 @@ class VAEActor(_Actor):
         self._latent_dim = latent_dim
         with self.init_scope():
             self._linear1 = L.Linear(
-                in_size=(state_dim+action_dim), out_size=750)
+                in_size=(state_dim + action_dim), out_size=750)
             self._linear2 = L.Linear(in_size=750, out_size=750)
 
             self._linear_mean = L.Linear(in_size=750, out_size=latent_dim)
             self._linear_ln_var = L.Linear(in_size=750, out_size=latent_dim)
 
             self._linear3 = L.Linear(
-                in_size=(state_dim+latent_dim), out_size=750)
+                in_size=(state_dim + latent_dim), out_size=750)
             self._linear4 = L.Linear(in_size=750, out_size=750)
             self._linear5 = L.Linear(in_size=750, out_size=action_dim)
 
@@ -128,7 +128,7 @@ class VAEActor(_Actor):
         s = F.transpose(s, axes=(1, 0, 2))
 
         x = F.concat((s, z), axis=2)
-        x = F.reshape(s, shape=(-1, x.shape[-1]))
+        x = F.reshape(x, shape=(-1, x.shape[-1]))
         h = self._linear3(x)
         h = F.relu(h)
         h = self._linear4(h)
