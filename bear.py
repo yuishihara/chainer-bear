@@ -207,13 +207,18 @@ class BEAR(object):
         (s, a, _, _, _) = batch
         target_q_value = self._compute_target_q_value(batch)
 
+        for optimizer in self._q_optimizers:
+            optimizer.target.cleargrads()
+
         loss = 0.0
-        for q, optimizer in zip(self._q_ensembles, self._q_optimizers):
+        for q in self._q_ensembles:
             loss += F.mean_squared_error(target_q_value, q(s, a))
-        optimizer.target.cleargrads()
+
         loss.backward()
         loss.unchain_backward()
-        optimizer.update()
+
+        for optimizer in self._q_optimizers:
+            optimizer.update()
 
         xp = chainer.backend.get_array_module(loss)
         status['q_loss'] = xp.array(loss.array)
@@ -337,7 +342,7 @@ class BEAR(object):
 
     def _compute_stddev(self, x, axis=None, keepdims=False):
         # stddev = sqrt(E[X^2] - E[X]^2)
-        return F.sqrt(F.mean(x**2, axis=axis, keepdims=keepdims) - F.mean(x, axis=axis, keepdims=keepdims)**2)
+        return F.sqrt(F.mean(x**2, axis=axis, keepdims=keepdims) - F.mean(x, axis=axis, keepdims=keepdims)**2 + 1e-6)
 
     def _initialize_all_networks(self):
         self._update_all_target_networks(tau=1.0)
