@@ -382,26 +382,33 @@ class BEAR(object):
                 (1.0 - tau) * target_param.data
 
     def _compute_gaussian_mmd(self, samples1, samples2, *, sigma=20.0):
+        n = samples1.shape[1]
+        m = samples2.shape[1]
+
         k_xx = F.expand_dims(x=samples1, axis=2) - \
             F.expand_dims(x=samples1, axis=1)
-        sum_k_xx = F.mean(
+        sum_k_xx = F.sum(
             F.exp(-F.sum(k_xx**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
         k_xy = F.expand_dims(x=samples1, axis=2) - \
             F.expand_dims(x=samples2, axis=1)
-        sum_k_xy = F.mean(
+        sum_k_xy = F.sum(
             F.exp(-F.sum(k_xy**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
         k_yy = F.expand_dims(x=samples2, axis=2) - \
             F.expand_dims(x=samples2, axis=1)
-        sum_k_yy = F.mean(
+        sum_k_yy = F.sum(
             F.exp(-F.sum(k_yy**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
-        mmd_squared = sum_k_xx - 2.0 * sum_k_xy + sum_k_yy
+        mmd_squared = \
+            sum_k_xx / (n * n) - 2.0 * sum_k_xy / (m * n) + sum_k_yy / (m * m)
 
         return F.sqrt(mmd_squared + 1e-6)
 
     def _compute_laplacian_mmd(self, samples1, samples2, *, sigma=20.0):
+        n = samples1.shape[1]
+        m = samples2.shape[1]
+
         k_xx = F.expand_dims(x=samples1, axis=2) - \
             F.expand_dims(x=samples1, axis=1)
         sum_k_xx = F.sum(
@@ -417,7 +424,8 @@ class BEAR(object):
         sum_k_yy = F.sum(
             F.exp(-F.sum(F.absolute(k_yy), axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
-        mmd_squared = sum_k_xx - 2.0 * sum_k_xy + sum_k_yy
+        mmd_squared = \
+            sum_k_xx / (n * n) - 2.0 * sum_k_xy / (m * n) + sum_k_yy / (m * m)
 
         return F.sqrt(mmd_squared + 1e-6)
 
