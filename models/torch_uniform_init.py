@@ -16,7 +16,7 @@ class HeUniformTorch(initializer.Initializer):
     def __call__(self, array):
         if self.dtype is not None:
             assert array.dtype == self.dtype
-        fan_in, _ = initializer.get_fans(array)
+        fan_in, _ = initializer.get_fans(array.shape)
         gain = self._calculate_gain(self._a)
         std = gain / np.sqrt(fan_in)
         bound = np.sqrt(3.0) * std

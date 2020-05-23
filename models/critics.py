@@ -2,7 +2,7 @@ import chainer
 import chainer.links as L
 import chainer.functions as F
 
-from torch_uniform_init import HeUniformTorch, LinearBiasInitializerTorch
+from .torch_uniform_init import HeUniformTorch, LinearBiasInitializerTorch
 
 
 class _Critic(chainer.Chain):
@@ -25,7 +25,7 @@ class MujocoCritic(_Critic):
         initialW = HeUniformTorch()
         with self.init_scope():
             self._linear1 = L.Linear(
-                in_size=(state_dim+action_dim), out_size=400, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=(state_dim+action_dim)))
+                in_size=(state_dim + action_dim), out_size=400, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=state_dim + action_dim))
             self._linear2 = L.Linear(
                 in_size=400, out_size=300, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=400))
             self._linear3 = L.Linear(
