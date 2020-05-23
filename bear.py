@@ -54,6 +54,7 @@ class BEAR(object):
     def __init__(self, critic_builder, actor_builder, vae_builder, state_dim, action_dim, *,
                  gamma=0.99, tau=0.005, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
                  warmup_iterations=100000, num_q_ensembles=2, num_mmd_samples=5, batch_size=100,
+                 use_stddev=False,
                  kernel_type='laplacian', device=-1):
         self._logger = logging.getLogger(self.__class__.__name__)
 
@@ -108,6 +109,7 @@ class BEAR(object):
         self._stddev_coeff = stddev_coeff * \
             np.sqrt((1 - delta_conf) / delta_conf)
         self._kernel_type = kernel_type
+        self._use_stddev = use_stddev
 
         self._batch_size = batch_size
         self._device = device
@@ -290,7 +292,10 @@ class BEAR(object):
             self._num_q_ensembles, self._num_mmd_samples, self._batch_size, 1))
         q_values = F.mean(q_values, axis=1)
         assert q_values.shape == (self._num_q_ensembles, self._batch_size, 1)
-        q_stddev = self._compute_stddev(x=q_values, axis=0, keepdims=False)
+        if self._use_stddev:
+            q_stddev = self._compute_stddev(x=q_values, axis=0, keepdims=False)
+        else:
+            q_stddev = 0.0
 
         q_min = F.min(q_values, axis=0)
 
