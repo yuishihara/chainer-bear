@@ -92,6 +92,9 @@ def start_training(args):
     env = build_env(args)
     test_env = build_env(args, seed=100)
 
+    print('action value for {} is -> max: {} min: {}'.format(
+        args.env, env.action_space.high[0], env.action_space.low[0]))
+
     bear = BEAR(
         critic_builder=critic_builder,
         actor_builder=actor_builder,
