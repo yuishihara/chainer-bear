@@ -346,8 +346,9 @@ class BEAR(object):
 
     def _compute_stddev(self, x, axis=None, keepdims=False):
         # stddev = sqrt(E[(X-E[X])^2])
-        var = F.mean((x - F.mean(x, axis=axis, keepdims=keepdims))
-                     ** 2, axis=axis, keepdims=keepdims)
+        mu = F.mean(x, axis=axis, keepdims=keepdims)
+        mu.unchain()
+        var = F.mean((x - mu) ** 2, axis=axis, keepdims=keepdims)
         return F.sqrt(var)
 
     def _initialize_all_networks(self):
