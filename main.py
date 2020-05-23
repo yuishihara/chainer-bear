@@ -131,6 +131,7 @@ def start_training(args):
             writer.add_scalars(
                 'eval_result', {'mean': mean, 'median': median}, global_step=timestep)
 
+        if timestep % 100 == 0:
             for (key, value) in status.items():
                 print('key: ', key, ' value: ', value)
                 writer.add_scalar(key, value.get(), global_step=timestep)
