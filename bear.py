@@ -316,7 +316,8 @@ class BEAR(object):
         self._pi_optimizer.update()
 
         # Just for maintaining consistency with original code
-        q_stddev.unchain()
+        if self._use_stddev:
+            q_stddev.unchain()
 
         # Update lagrange multiplier
         lagrange_loss = -F.mean(-q_min +
