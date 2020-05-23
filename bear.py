@@ -52,7 +52,7 @@ class OptimizableLagrangeMultiplier(chainer.Chain):
 
 class BEAR(object):
     def __init__(self, critic_builder, actor_builder, vae_builder, state_dim, action_dim, *,
-                 gamma=0.99, tau=0.005, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
+                 gamma=0.99, tau=0.5 * 1e-3, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
                  warmup_iterations=100000, num_q_ensembles=2, num_mmd_samples=5, batch_size=100,
                  kernel_type='laplacian', device=-1):
         self._logger = logging.getLogger(self.__class__.__name__)
@@ -276,34 +276,34 @@ class BEAR(object):
             raise ValueError('Unknown kernel: {}'.format(self._kernel_type))
         assert mmd_loss.shape == (self._batch_size, 1)
 
-        s_hat=F.expand_dims(s, axis = 0)
-        s_hat=F.repeat(s_hat, repeats = self._num_mmd_samples, axis = 0)
-        s_hat=F.reshape(s_hat, shape = (self._batch_size * self._num_mmd_samples,
+        s_hat = F.expand_dims(s, axis=0)
+        s_hat = F.repeat(s_hat, repeats=self._num_mmd_samples, axis=0)
+        s_hat = F.reshape(s_hat, shape=(self._batch_size * self._num_mmd_samples,
                                         s.shape[-1]))
-        a_hat=F.transpose(pi_actions, axes = (1, 0, 2))
-        a_hat=F.reshape(a_hat, shape = (self._batch_size * self._num_mmd_samples,
+        a_hat = F.transpose(pi_actions, axes=(1, 0, 2))
+        a_hat = F.reshape(a_hat, shape=(self._batch_size * self._num_mmd_samples,
                                         a.shape[-1]))
 
-        q_values=F.stack([q(s_hat, a_hat) for q in self._q_ensembles])
+        q_values = F.stack([q(s_hat, a_hat) for q in self._q_ensembles])
         assert q_values.shape == (
             self._num_q_ensembles, self._batch_size * self._num_mmd_samples, 1)
-        q_values=F.reshape(q_values, shape = (
+        q_values = F.reshape(q_values, shape=(
             self._num_q_ensembles, self._num_mmd_samples, self._batch_size,  1))
-        q_values=F.mean(q_values, axis = 1)
+        q_values = F.mean(q_values, axis=1)
         assert q_values.shape == (self._num_q_ensembles, self._batch_size, 1)
-        q_stddev=self._compute_stddev(x = q_values, axis = 0, keepdims = False)
+        q_stddev = self._compute_stddev(x=q_values, axis=0, keepdims=False)
 
-        q_min=F.min(q_values, axis = 0)
+        q_min = F.min(q_values, axis=0)
 
         assert q_min.shape == q_stddev.shape
         assert q_min.shape == (self._batch_size, 1)
 
         if self._num_iterations > self._warmup_iterations:
-            pi_loss=F.mean(-q_min
+            pi_loss = F.mean(-q_min
                              + q_stddev * self._stddev_coeff
                              + self._lagrange_multiplier.exp() * mmd_loss)
         else:
-            pi_loss=F.mean(self._lagrange_multiplier.exp() * mmd_loss)
+            pi_loss = F.mean(self._lagrange_multiplier.exp() * mmd_loss)
 
         # Dual gradient descent
         # Update actor
@@ -311,11 +311,8 @@ class BEAR(object):
         pi_loss.backward()
         self._pi_optimizer.update()
 
-        # Unchaining q_stddev to maintain consistency with original code
-        q_stddev.unchain()
-
         # Update lagrange multiplier
-        lagrange_loss=-F.mean(-q_min
+        lagrange_loss = -F.mean(-q_min
                                 + q_stddev * self._stddev_coeff
                                 + self._lagrange_multiplier.exp() * (mmd_loss - self._epsilon))
         self._lagrange_optimizer.target.cleargrads()
@@ -328,43 +325,43 @@ class BEAR(object):
         # Clip lagrange multiplier in range
         self._lagrange_multiplier.clip(-5.0, 10.0)
 
-        xp=chainer.backend.get_array_module(pi_loss)
-        status['pi_loss']=xp.array(pi_loss.array)
-        status['mmd_loss']=xp.mean(xp.array(mmd_loss.array))
-        status['lagrange_loss']=xp.array(pi_loss.array)
-        status['lagrange_multiplier']=xp.array(
+        xp = chainer.backend.get_array_module(pi_loss)
+        status['pi_loss'] = xp.array(pi_loss.array)
+        status['mmd_loss'] = xp.mean(xp.array(mmd_loss.array))
+        status['lagrange_loss'] = xp.array(pi_loss.array)
+        status['lagrange_multiplier'] = xp.array(
             self._lagrange_multiplier().array)
 
         return status
 
     def _train_vae(self, batch):
-        status={}
+        status = {}
 
-        (s, a, _, _, _)=batch
-        reconstructed_action, mean, ln_var=self._vae((s, a))
-        reconstruction_loss=F.mean_squared_error(reconstructed_action, a)
-        latent_loss=0.5 *
-            F.gaussian_kl_divergence(mean, ln_var, reduce = 'mean')
-        vae_loss=reconstruction_loss + latent_loss
+        (s, a, _, _, _) = batch
+        reconstructed_action, mean, ln_var = self._vae((s, a))
+        reconstruction_loss = F.mean_squared_error(reconstructed_action, a)
+        latent_loss = 0.5 * \
+            F.gaussian_kl_divergence(mean, ln_var, reduce='mean')
+        vae_loss = reconstruction_loss + latent_loss
 
         self._vae_optimizer.target.cleargrads()
         vae_loss.backward()
         vae_loss.unchain_backward()
         self._vae_optimizer.update()
 
-        xp=chainer.backend.get_array_module(vae_loss)
-        status['vae_loss']=xp.array(vae_loss.array)
+        xp = chainer.backend.get_array_module(vae_loss)
+        status['vae_loss'] = xp.array(vae_loss.array)
         return status
 
-    def _compute_stddev(self, x, axis = None, keepdims = False):
+    def _compute_stddev(self, x, axis=None, keepdims=False):
         # stddev = sqrt(E[(X-E[X])^2])
-        mu=F.mean(x, axis = axis, keepdims = keepdims)
+        mu = F.mean(x, axis=axis, keepdims=keepdims)
         mu.unchain()
-        var=F.mean((x - mu) ** 2, axis = axis, keepdims = keepdims)
+        var = F.mean((x - mu) ** 2, axis=axis, keepdims=keepdims)
         return F.sqrt(var)
 
     def _initialize_all_networks(self):
-        self._update_all_target_networks(tau = 1.0)
+        self._update_all_target_networks(tau=1.0)
 
     def _update_all_target_networks(self, tau):
         for target_q, q in zip(self._target_q_ensembles, self._q_ensembles):
@@ -373,53 +370,53 @@ class BEAR(object):
 
     def _update_target_network(self, target, origin, tau):
         for target_param, origin_param in zip(target.params(), origin.params()):
-            target_param.data=tau * origin_param.data + \
+            target_param.data = tau * origin_param.data + \
                 (1.0 - tau) * target_param.data
 
-    def _compute_gaussian_mmd(self, samples1, samples2, *, sigma = 20.0):
-        n=samples1.shape[1]
-        m=samples2.shape[1]
+    def _compute_gaussian_mmd(self, samples1, samples2, *, sigma=20.0):
+        n = samples1.shape[1]
+        m = samples2.shape[1]
 
-        k_xx=F.expand_dims(x = samples1, axis = 2) - \
-            F.expand_dims(x = samples1, axis = 1)
-        sum_k_xx=F.sum(
-            F.exp(-F.sum(k_xx**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis = (1, 2))
+        k_xx = F.expand_dims(x=samples1, axis=2) - \
+            F.expand_dims(x=samples1, axis=1)
+        sum_k_xx = F.sum(
+            F.exp(-F.sum(k_xx**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
-        k_xy=F.expand_dims(x = samples1, axis = 2) -
-            F.expand_dims(x = samples2, axis = 1)
-        sum_k_xy=F.sum(
-            F.exp(-F.sum(k_xy**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis = (1, 2))
+        k_xy = F.expand_dims(x=samples1, axis=2) - \
+            F.expand_dims(x=samples2, axis=1)
+        sum_k_xy = F.sum(
+            F.exp(-F.sum(k_xy**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
-        k_yy=F.expand_dims(x = samples2, axis = 2) -
-            F.expand_dims(x = samples2, axis = 1)
-        sum_k_yy=F.sum(
-            F.exp(-F.sum(k_yy**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis = (1, 2))
+        k_yy = F.expand_dims(x=samples2, axis=2) - \
+            F.expand_dims(x=samples2, axis=1)
+        sum_k_yy = F.sum(
+            F.exp(-F.sum(k_yy**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
-        mmd_squared=
+        mmd_squared = \
             sum_k_xx / (n * n) - 2.0 * sum_k_xy / (m * n) + sum_k_yy / (m * m)
 
         return F.sqrt(mmd_squared + 1e-6)
 
-    def _compute_laplacian_mmd(self, samples1, samples2, *, sigma = 20.0):
-        n=samples1.shape[1]
-        m=samples2.shape[1]
+    def _compute_laplacian_mmd(self, samples1, samples2, *, sigma=20.0):
+        n = samples1.shape[1]
+        m = samples2.shape[1]
 
-        k_xx=F.expand_dims(x = samples1, axis = 2) -
-            F.expand_dims(x = samples1, axis = 1)
-        sum_k_xx=F.sum(
-            F.exp(-F.sum(F.absolute(k_xx), axis=-1, keepdims=True) / (2.0 * sigma)), axis = (1, 2))
+        k_xx = F.expand_dims(x=samples1, axis=2) - \
+            F.expand_dims(x=samples1, axis=1)
+        sum_k_xx = F.sum(
+            F.exp(-F.sum(F.absolute(k_xx), axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
-        k_xy=F.expand_dims(x = samples1, axis = 2) -
-            F.expand_dims(x = samples2, axis = 1)
-        sum_k_xy=F.sum(
-            F.exp(-F.sum(F.absolute(k_xy), axis=-1, keepdims=True) / (2.0 * sigma)), axis = (1, 2))
+        k_xy = F.expand_dims(x=samples1, axis=2) - \
+            F.expand_dims(x=samples2, axis=1)
+        sum_k_xy = F.sum(
+            F.exp(-F.sum(F.absolute(k_xy), axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
-        k_yy=F.expand_dims(x = samples2, axis = 2) -
-            F.expand_dims(x = samples2, axis = 1)
-        sum_k_yy=F.sum(
-            F.exp(-F.sum(F.absolute(k_yy), axis=-1, keepdims=True) / (2.0 * sigma)), axis = (1, 2))
+        k_yy = F.expand_dims(x=samples2, axis=2) - \
+            F.expand_dims(x=samples2, axis=1)
+        sum_k_yy = F.sum(
+            F.exp(-F.sum(F.absolute(k_yy), axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
-        mmd_squared=
+        mmd_squared = \
             sum_k_xx / (n * n) - 2.0 * sum_k_xy / (m * n) + sum_k_yy / (m * m)
 
         return F.sqrt(mmd_squared + 1e-6)
@@ -427,70 +424,70 @@ class BEAR(object):
 
 if __name__ == "__main__":
     def _compute_sum_gaussian_kernel(s1, s2):
-        gaussian_kernel=[]
+        gaussian_kernel = []
         for b in range(s1.shape[0]):
-            kernel_sum=0.0
+            kernel_sum = 0.0
             for i in range(s1.shape[1]):
                 for j in range(s2.shape[1]):
-                    diff=0.0
+                    diff = 0.0
                     for k in range(s1.shape[2]):
                         diff += (s1[b][i][k] - s2[b][j][k]) ** 2
                     kernel_sum += np.exp(-diff / (2.0 * 20.0))
             gaussian_kernel.append([kernel_sum])
         return np.array(gaussian_kernel)
 
-    samples1=np.array([[[1, 1, 1], [2, 2, 2], [3, 3, 3]],
-                         [[4, 4, 4], [2, 2, 2], [3, 3, 3]]], dtype = np.float32)
-    samples2=np.array([[[0, 0, 0], [1, 1, 1]],
-                         [[1, 2, 3], [1, 1, 1]]], dtype = np.float32)
+    samples1 = np.array([[[1, 1, 1], [2, 2, 2], [3, 3, 3]],
+                         [[4, 4, 4], [2, 2, 2], [3, 3, 3]]], dtype=np.float32)
+    samples2 = np.array([[[0, 0, 0], [1, 1, 1]],
+                         [[1, 2, 3], [1, 1, 1]]], dtype=np.float32)
 
-    n=samples1.shape[1]
-    m=samples2.shape[1]
+    n = samples1.shape[1]
+    m = samples2.shape[1]
 
-    expected_kxx=_compute_sum_gaussian_kernel(samples1, samples1)
-    expected_kxy=_compute_sum_gaussian_kernel(samples1, samples2)
-    expected_kyy=_compute_sum_gaussian_kernel(samples2, samples2)
+    expected_kxx = _compute_sum_gaussian_kernel(samples1, samples1)
+    expected_kxy = _compute_sum_gaussian_kernel(samples1, samples2)
+    expected_kyy = _compute_sum_gaussian_kernel(samples2, samples2)
 
-    expected_mmd=
-        expected_kxx / (n * n) - 2.0 * expected_kxy /
+    expected_mmd = \
+        expected_kxx / (n * n) - 2.0 * expected_kxy / \
         (m * n) + expected_kyy / (m * m)
-    expected_mmd=np.sqrt(expected_mmd + 1e-6)
+    expected_mmd = np.sqrt(expected_mmd + 1e-6)
 
     def fake_builder(self, *args):
         return chainer.Chain()
 
-    bear=BEAR(critic_builder = fake_builder, actor_builder = fake_builder,
-                vae_builder = fake_builder, state_dim = 5, action_dim = 5)
-    actual_mmd=bear._compute_gaussian_mmd(samples1, samples2, sigma = 20.0)
-    actual_mmd=actual_mmd.array
+    bear = BEAR(critic_builder=fake_builder, actor_builder=fake_builder,
+                vae_builder=fake_builder, state_dim=5, action_dim=5)
+    actual_mmd = bear._compute_gaussian_mmd(samples1, samples2, sigma=20.0)
+    actual_mmd = actual_mmd.array
     print('actual mmd: ', actual_mmd)
     print('expected mmd: ', expected_mmd)
     assert actual_mmd.shape == (samples1.shape[0], 1)
     assert np.all(np.isclose(actual_mmd, expected_mmd))
 
-    lagrange_multiplier=OptimizableLagrangeMultiplier(initial_value = 3.0)
-    scaled_multiplier=lagrange_multiplier * 5
+    lagrange_multiplier = OptimizableLagrangeMultiplier(initial_value=3.0)
+    scaled_multiplier = lagrange_multiplier * 5
     print(
         f'lagrange multiplier: {lagrange_multiplier}, scaled multiplier {scaled_multiplier}')
 
-    array=np.random.normal(loc = 0.0, scale = 1.0, size = (100, 100, 1))
-    stddev=bear._compute_stddev(array, axis = 0, keepdims = False)
+    array = np.random.normal(loc=0.0, scale=1.0, size=(100, 100, 1))
+    stddev = bear._compute_stddev(array, axis=0, keepdims=False)
     # print('stddev', stddev)
     assert stddev.shape == (100, 1)
 
-    batch_size=3
-    num_samples=10
-    s=np.array([[1, 1, 1, 1, 1], [2, 2, 2, 2, 2], [3, 3, 3, 3, 3]])
-    s_hat=F.expand_dims(s, axis = 0)
-    s_hat=F.repeat(s_hat, repeats = num_samples, axis = 0)
+    batch_size = 3
+    num_samples = 10
+    s = np.array([[1, 1, 1, 1, 1], [2, 2, 2, 2, 2], [3, 3, 3, 3, 3]])
+    s_hat = F.expand_dims(s, axis=0)
+    s_hat = F.repeat(s_hat, repeats=num_samples, axis=0)
     assert s_hat.shape == (num_samples, batch_size,  5)
-    s_reshaped=F.reshape(s_hat, shape = (
+    s_reshaped = F.reshape(s_hat, shape=(
         batch_size * num_samples, s.shape[-1]))
-    s_reshaped_back=F.reshape(s_reshaped, shape = (
+    s_reshaped_back = F.reshape(s_reshaped, shape=(
         num_samples, batch_size, s.shape[-1]))
     assert np.all(s_hat.array == s_reshaped_back.array)
 
-    array=np.array([[[1], [1], [1]], [[2], [2], [2]], [[3], [3], [3]]])
+    array = np.array([[[1], [1], [1]], [[2], [2], [2]], [[3], [3], [3]]])
     print('array shape: ', array.shape)
     print('mean axis=0:', np.mean(array, axis=0))
     print('mean axis=1:', np.mean(array, axis=1))
