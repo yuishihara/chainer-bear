@@ -231,6 +231,8 @@ def main():
     parser.add_argument('--num-ensembles', type=int, default=2)
     parser.add_argument('--mmd-samples', type=int, default=5)
     parser.add_argument('--lmb', type=float, default=0.75)
+    parser.add_argument('--kernel-type', type=str,
+                        choices=['gaussian', 'laplacian'], default='laplacian')
     parser.add_argument('--epsilon', type=float, default=0.05)
     parser.add_argument('--kernel-sigma', type=float, default=20.0)
     parser.add_argument('--batch-size', type=int, default=100)

@@ -53,7 +53,8 @@ class OptimizableLagrangeMultiplier(chainer.Chain):
 class BEAR(object):
     def __init__(self, critic_builder, actor_builder, vae_builder, state_dim, action_dim, *,
                  gamma=0.99, tau=0.5 * 1e-3, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
-                 warmup_iterations=100000, num_q_ensembles=2, num_mmd_samples=5, batch_size=100, device=-1):
+                 warmup_iterations=100000, num_q_ensembles=2, num_mmd_samples=5, batch_size=100,
+                 kernel_type='laplacian', device=-1):
         self._logger = logging.getLogger(self.__class__.__name__)
 
         self._q_ensembles = []
@@ -106,6 +107,7 @@ class BEAR(object):
         delta_conf = 0.1
         self._stddev_coeff = stddev_coeff * \
             np.sqrt((1 - delta_conf) / delta_conf)
+        self._kernel_type = kernel_type
 
         self._batch_size = batch_size
         self._device = device
@@ -263,8 +265,15 @@ class BEAR(object):
         pi_actions, raw_pi_actions = self._pi._sample_multiple(
             s, sample_num=self._num_mmd_samples)
 
-        mmd_loss = self._compute_gaussian_mmd(
-            raw_sampled_actions, raw_pi_actions, sigma=self._mmd_sigma)
+        if self._kernel_type == 'gaussian':
+            mmd_loss = self._compute_gaussian_mmd(
+                raw_sampled_actions, raw_pi_actions, sigma=self._mmd_sigma)
+        elif self._kernel_type == 'laplacian':
+            mmd_loss = self._compute_laplacian_mmd(
+                raw_sampled_actions, raw_pi_actions, sigma=self._mmd_sigma)
+            )
+        else:
+            raise ValueError('Unknown kernel: {}'.format(self._kernel_type))
         assert mmd_loss.shape == (self._batch_size, 1)
 
         s_hat = F.expand_dims(s, axis=0)
@@ -382,6 +391,30 @@ class BEAR(object):
             F.expand_dims(x=samples2, axis=1)
         sum_k_yy = F.sum(
             F.exp(-F.sum(k_yy**2, axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
+
+        mmd_squared = \
+            sum_k_xx / (n * n) - 2.0 * sum_k_xy / (m * n) + sum_k_yy / (m * m)
+
+        return F.sqrt(mmd_squared + 1e-6)
+
+    def _compute_laplacian_mmd(self, samples1, samples2, *, sigma=20.0):
+        n = samples1.shape[1]
+        m = samples2.shape[1]
+
+        k_xx = F.expand_dims(x=samples1, axis=2) - \
+            F.expand_dims(x=samples1, axis=1)
+        sum_k_xx = F.sum(
+            F.exp(-F.sum(F.absolute(k_xx), axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
+
+        k_xy = F.expand_dims(x=samples1, axis=2) - \
+            F.expand_dims(x=samples2, axis=1)
+        sum_k_xy = F.sum(
+            F.exp(-F.sum(F.absolute(k_xy), axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
+
+        k_yy = F.expand_dims(x=samples2, axis=2) - \
+            F.expand_dims(x=samples2, axis=1)
+        sum_k_yy = F.sum(
+            F.exp(-F.sum(F.absolute(k_yy), axis=-1, keepdims=True) / (2.0 * sigma)), axis=(1, 2))
 
         mmd_squared = \
             sum_k_xx / (n * n) - 2.0 * sum_k_xy / (m * n) + sum_k_yy / (m * m)
