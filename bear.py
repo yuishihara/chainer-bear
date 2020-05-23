@@ -287,7 +287,7 @@ class BEAR(object):
         assert q_values.shape == (
             self._num_q_ensembles, self._batch_size * self._num_mmd_samples, 1)
         q_values = F.reshape(q_values, shape=(
-            self._num_q_ensembles, self._num_mmd_samples, self._batch_size,  1))
+            self._num_q_ensembles, self._num_mmd_samples, self._batch_size, 1))
         q_values = F.mean(q_values, axis=1)
         assert q_values.shape == (self._num_q_ensembles, self._batch_size, 1)
         q_stddev = self._compute_stddev(x=q_values, axis=0, keepdims=False)
@@ -298,9 +298,9 @@ class BEAR(object):
         assert q_min.shape == (self._batch_size, 1)
 
         if self._num_iterations > self._warmup_iterations:
-            pi_loss = F.mean(-q_min
-                             + q_stddev * self._stddev_coeff
-                             + self._lagrange_multiplier.exp() * mmd_loss)
+            pi_loss = F.mean(-q_min +
+                             q_stddev * self._stddev_coeff +
+                             self._lagrange_multiplier.exp() * mmd_loss)
         else:
             pi_loss = F.mean(self._lagrange_multiplier.exp() * mmd_loss)
 
@@ -311,12 +311,12 @@ class BEAR(object):
         self._pi_optimizer.update()
 
         # Just for maintaining consistency with original code
-        self._stddev_coeff.unchain()
+        q_stddev.unchain()
 
         # Update lagrange multiplier
-        lagrange_loss = -F.mean(-q_min
-                                + q_stddev * self._stddev_coeff
-                                + self._lagrange_multiplier.exp() * (mmd_loss - self._epsilon))
+        lagrange_loss = -F.mean(-q_min +
+                                q_stddev * self._stddev_coeff +
+                                self._lagrange_multiplier.exp() * (mmd_loss - self._epsilon))
         self._lagrange_optimizer.target.cleargrads()
         lagrange_loss.backward()
         self._lagrange_optimizer.update()
@@ -482,7 +482,7 @@ if __name__ == "__main__":
     s = np.array([[1, 1, 1, 1, 1], [2, 2, 2, 2, 2], [3, 3, 3, 3, 3]])
     s_hat = F.expand_dims(s, axis=0)
     s_hat = F.repeat(s_hat, repeats=num_samples, axis=0)
-    assert s_hat.shape == (num_samples, batch_size,  5)
+    assert s_hat.shape == (num_samples, batch_size, 5)
     s_reshaped = F.reshape(s_hat, shape=(
         batch_size * num_samples, s.shape[-1]))
     s_reshaped_back = F.reshape(s_reshaped, shape=(
