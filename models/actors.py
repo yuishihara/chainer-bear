@@ -2,7 +2,7 @@ import chainer
 import chainer.functions as F
 import chainer.links as L
 
-from torch_uniform_init import HeUniformTorch, LinearBiasInitializerTorch
+from .torch_uniform_init import HeUniformTorch, LinearBiasInitializerTorch
 
 
 class _Actor(chainer.Chain):
@@ -96,7 +96,7 @@ class VAEActor(_Actor):
                 in_size=750, out_size=latent_dim, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=750))
 
             self._linear3 = L.Linear(
-                in_size=(state_dim + latent_dim), out_size=750, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=(state_dim+latent_dim)))
+                in_size=(state_dim + latent_dim), out_size=750, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=state_dim + latent_dim))
             self._linear4 = L.Linear(
                 in_size=750, out_size=750, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=750))
             self._linear5 = L.Linear(
