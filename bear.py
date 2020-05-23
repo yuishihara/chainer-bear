@@ -292,14 +292,14 @@ class BEAR(object):
             self._num_q_ensembles, self._num_mmd_samples, self._batch_size, 1))
         q_values = F.mean(q_values, axis=1)
         assert q_values.shape == (self._num_q_ensembles, self._batch_size, 1)
+        q_min = F.min(q_values, axis=0)
+
         if self._use_stddev:
             q_stddev = self._compute_stddev(x=q_values, axis=0, keepdims=False)
+            assert q_min.shape == q_stddev.shape
         else:
             q_stddev = 0.0
 
-        q_min = F.min(q_values, axis=0)
-
-        assert q_min.shape == q_stddev.shape
         assert q_min.shape == (self._batch_size, 1)
 
         if self._num_iterations > self._warmup_iterations:
