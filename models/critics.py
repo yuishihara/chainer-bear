@@ -16,13 +16,17 @@ class _Critic(chainer.Chain):
 
 
 class MujocoCritic(_Critic):
-    def __init__(self, state_dim, action_dim):
+    def __init__(self, state_dim, action_dim,
+                 initialW=chainer.initializers.HeUniform(),
+                 initialb=chainer.initializers.HeUniform()):
         super(MujocoCritic, self).__init__()
         with self.init_scope():
             self._linear1 = L.Linear(
-                in_size=(state_dim+action_dim), out_size=400)
-            self._linear2 = L.Linear(in_size=400, out_size=300)
-            self._linear3 = L.Linear(in_size=300, out_size=1)
+                in_size=(state_dim+action_dim), out_size=400, initialW=initialW, initial_bias=initialb)
+            self._linear2 = L.Linear(
+                in_size=400, out_size=300, initialW=initialW, initial_bias=initialb)
+            self._linear3 = L.Linear(
+                in_size=300, out_size=1, initialW=initialW, initial_bias=initialb)
         self._state_dim = state_dim
         self._action_dim = action_dim
 

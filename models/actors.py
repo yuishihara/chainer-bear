@@ -16,14 +16,20 @@ class _Actor(chainer.Chain):
 
 
 class MujocoActor(_Actor):
-    def __init__(self, state_dim, action_dim):
+    def __init__(self, state_dim, action_dim,
+                 initialW=chainer.initializers.HeUniform(),
+                 initialb=chainer.initializers.HeUniform()):
         super(MujocoActor, self).__init__()
         with self.init_scope():
-            self._linear1 = L.Linear(in_size=state_dim, out_size=400)
-            self._linear2 = L.Linear(in_size=400, out_size=300)
+            self._linear1 = L.Linear(
+                in_size=state_dim, out_size=400, initialW=initialW, initial_bias=initialb)
+            self._linear2 = L.Linear(
+                in_size=400, out_size=300, initialW=initialW, initial_bias=initialb)
 
-            self._linear_mean = L.Linear(in_size=300, out_size=action_dim)
-            self._linear_ln_var = L.Linear(in_size=300, out_size=action_dim)
+            self._linear_mean = L.Linear(
+                in_size=300, out_size=action_dim, initialW=initialW, initial_bias=initialb)
+            self._linear_ln_var = L.Linear(
+                in_size=300, out_size=action_dim, initialW=initialW, initial_bias=initialb)
 
         self._action_dim = action_dim
 
@@ -71,23 +77,30 @@ class MujocoActor(_Actor):
 
 
 class VAEActor(_Actor):
-    def __init__(self, state_dim, action_dim, latent_dim):
+    def __init__(self, state_dim, action_dim, latent_dim,
+                 initialW=chainer.initializers.HeUniform(),
+                 initialb=chainer.initializers.HeUniform()):
         super(VAEActor, self).__init__()
         self._state_dim = state_dim
         self._action_dim = action_dim
         self._latent_dim = latent_dim
         with self.init_scope():
             self._linear1 = L.Linear(
-                in_size=(state_dim + action_dim), out_size=750)
-            self._linear2 = L.Linear(in_size=750, out_size=750)
+                in_size=(state_dim + action_dim), out_size=750, initialW=initialW, initial_bias=initialb)
+            self._linear2 = L.Linear(
+                in_size=750, out_size=750, initialW=initialW, initial_bias=initialb)
 
-            self._linear_mean = L.Linear(in_size=750, out_size=latent_dim)
-            self._linear_ln_var = L.Linear(in_size=750, out_size=latent_dim)
+            self._linear_mean = L.Linear(
+                in_size=750, out_size=latent_dim, initialW=initialW, initial_bias=initialb)
+            self._linear_ln_var = L.Linear(
+                in_size=750, out_size=latent_dim, initialW=initialW, initial_bias=initialb)
 
             self._linear3 = L.Linear(
-                in_size=(state_dim + latent_dim), out_size=750)
-            self._linear4 = L.Linear(in_size=750, out_size=750)
-            self._linear5 = L.Linear(in_size=750, out_size=action_dim)
+                in_size=(state_dim + latent_dim), out_size=750, initialW=initialW, initial_bias=initialb)
+            self._linear4 = L.Linear(
+                in_size=750, out_size=750, initialW=initialW, initial_bias=initialb)
+            self._linear5 = L.Linear(
+                in_size=750, out_size=action_dim, initialW=initialW, initial_bias=initialb)
 
     def __call__(self, x):
         (s, a) = x
