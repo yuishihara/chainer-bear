@@ -109,6 +109,7 @@ def start_training(args):
         num_q_ensembles=args.num_ensembles,
         num_mmd_samples=args.mmd_samples,
         batch_size=args.batch_size,
+        kernel_type=args.kernel_type,
         device=args.gpu)
     load_params(bear, args)
 
