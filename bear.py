@@ -52,7 +52,7 @@ class OptimizableLagrangeMultiplier(chainer.Chain):
 
 class BEAR(object):
     def __init__(self, critic_builder, actor_builder, vae_builder, state_dim, action_dim, *,
-                 gamma=0.99, tau=0.5 * 1e-3, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
+                 gamma=0.99, tau=0.005, lmb=0.75, epsilon=0.05, stddev_coeff=0.4, mmd_sigma=20.0,
                  warmup_iterations=100000, num_q_ensembles=2, num_mmd_samples=5, batch_size=100,
                  kernel_type='laplacian', device=-1):
         self._logger = logging.getLogger(self.__class__.__name__)
