@@ -271,7 +271,6 @@ class BEAR(object):
         elif self._kernel_type == 'laplacian':
             mmd_loss = self._compute_laplacian_mmd(
                 raw_sampled_actions, raw_pi_actions, sigma=self._mmd_sigma)
-            )
         else:
             raise ValueError('Unknown kernel: {}'.format(self._kernel_type))
         assert mmd_loss.shape == (self._batch_size, 1)
