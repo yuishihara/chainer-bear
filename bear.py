@@ -330,7 +330,7 @@ class BEAR(object):
         xp = chainer.backend.get_array_module(pi_loss)
         status['pi_loss'] = xp.array(pi_loss.array)
         status['mmd_loss'] = xp.mean(xp.array(mmd_loss.array))
-        status['lagrange_loss'] = xp.array(pi_loss.array)
+        status['lagrange_loss'] = xp.array(lagrange_loss.array)
         status['lagrange_multiplier'] = xp.array(
             self._lagrange_multiplier().array)
 
