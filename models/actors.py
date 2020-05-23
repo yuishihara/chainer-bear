@@ -2,6 +2,8 @@ import chainer
 import chainer.functions as F
 import chainer.links as L
 
+from torch_uniform_init import HeUniformTorch, LinearBiasInitializerTorch
+
 
 class _Actor(chainer.Chain):
     def save(self, path):
@@ -16,20 +18,19 @@ class _Actor(chainer.Chain):
 
 
 class MujocoActor(_Actor):
-    def __init__(self, state_dim, action_dim,
-                 initialW=chainer.initializers.HeUniform(),
-                 initialb=chainer.initializers.HeUniform()):
+    def __init__(self, state_dim, action_dim):
         super(MujocoActor, self).__init__()
+        initialW = HeUniformTorch()
         with self.init_scope():
             self._linear1 = L.Linear(
-                in_size=state_dim, out_size=400, initialW=initialW, initial_bias=initialb)
+                in_size=state_dim, out_size=400, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=state_dim))
             self._linear2 = L.Linear(
-                in_size=400, out_size=300, initialW=initialW, initial_bias=initialb)
+                in_size=400, out_size=300, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=400))
 
             self._linear_mean = L.Linear(
-                in_size=300, out_size=action_dim, initialW=initialW, initial_bias=initialb)
+                in_size=300, out_size=action_dim, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=300))
             self._linear_ln_var = L.Linear(
-                in_size=300, out_size=action_dim, initialW=initialW, initial_bias=initialb)
+                in_size=300, out_size=action_dim, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=300))
 
         self._action_dim = action_dim
 
@@ -77,30 +78,29 @@ class MujocoActor(_Actor):
 
 
 class VAEActor(_Actor):
-    def __init__(self, state_dim, action_dim, latent_dim,
-                 initialW=chainer.initializers.HeUniform(),
-                 initialb=chainer.initializers.HeUniform()):
+    def __init__(self, state_dim, action_dim, latent_dim):
         super(VAEActor, self).__init__()
         self._state_dim = state_dim
         self._action_dim = action_dim
         self._latent_dim = latent_dim
+        initialW = HeUniformTorch()
         with self.init_scope():
             self._linear1 = L.Linear(
-                in_size=(state_dim + action_dim), out_size=750, initialW=initialW, initial_bias=initialb)
+                in_size=(state_dim + action_dim), out_size=750, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=state_dim))
             self._linear2 = L.Linear(
-                in_size=750, out_size=750, initialW=initialW, initial_bias=initialb)
+                in_size=750, out_size=750, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=750))
 
             self._linear_mean = L.Linear(
-                in_size=750, out_size=latent_dim, initialW=initialW, initial_bias=initialb)
+                in_size=750, out_size=latent_dim, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=750))
             self._linear_ln_var = L.Linear(
-                in_size=750, out_size=latent_dim, initialW=initialW, initial_bias=initialb)
+                in_size=750, out_size=latent_dim, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=750))
 
             self._linear3 = L.Linear(
-                in_size=(state_dim + latent_dim), out_size=750, initialW=initialW, initial_bias=initialb)
+                in_size=(state_dim + latent_dim), out_size=750, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=(state_dim+latent_dim)))
             self._linear4 = L.Linear(
-                in_size=750, out_size=750, initialW=initialW, initial_bias=initialb)
+                in_size=750, out_size=750, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=750))
             self._linear5 = L.Linear(
-                in_size=750, out_size=action_dim, initialW=initialW, initial_bias=initialb)
+                in_size=750, out_size=action_dim, initialW=initialW, initial_bias=LinearBiasInitializerTorch(fan_in=750))
 
     def __call__(self, x):
         (s, a) = x
