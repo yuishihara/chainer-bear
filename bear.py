@@ -276,14 +276,18 @@ class BEAR(object):
                                         a.shape[-1]))
 
         q_values = F.stack([q(s_hat, a_hat) for q in self._q_ensembles])
+        assert q_values.shape == (
+            self._num_q_ensembles, self._batch_size * self._num_mmd_samples, 1)
         q_values = F.reshape(q_values, shape=(
-            self._num_q_ensembles, self._num_mmd_samples * self._batch_size, 1))
+            self._num_q_ensembles, self._num_mmd_samples, self._batch_size,  1))
         q_values = F.mean(q_values, axis=1)
+        assert q_values.shape == (self._num_q_ensembles, self._batch_size, 1)
         q_stddev = self._compute_stddev(x=q_values, axis=0, keepdims=False)
 
         q_min = F.min(q_values, axis=0)
 
         assert q_min.shape == q_stddev.shape
+        assert q_min.shape == (self._batch_size, 1)
 
         if self._num_iterations > self._warmup_iterations:
             pi_loss = F.mean(-q_min
@@ -341,8 +345,10 @@ class BEAR(object):
         return status
 
     def _compute_stddev(self, x, axis=None, keepdims=False):
-        # stddev = sqrt(E[X^2] - E[X]^2)
-        return F.sqrt(F.mean(x**2, axis=axis, keepdims=keepdims) - F.mean(x, axis=axis, keepdims=keepdims)**2 + 1e-6)
+        # stddev = sqrt(E[(X-E[X])^2])
+        var = F.mean((x - F.mean(x, axis=axis, keepdims=keepdims))
+                     ** 2, axis=axis, keepdims=keepdims)
+        return F.sqrt(var)
 
     def _initialize_all_networks(self):
         self._update_all_target_networks(tau=1.0)
@@ -429,3 +435,25 @@ if __name__ == "__main__":
     scaled_multiplier = lagrange_multiplier * 5
     print(
         f'lagrange multiplier: {lagrange_multiplier}, scaled multiplier {scaled_multiplier}')
+
+    array = np.random.normal(loc=0.0, scale=1.0, size=(100, 100, 1))
+    stddev = bear._compute_stddev(array, axis=0, keepdims=False)
+    # print('stddev', stddev)
+    assert stddev.shape == (100, 1)
+
+    batch_size = 3
+    num_samples = 10
+    s = np.array([[1, 1, 1, 1, 1], [2, 2, 2, 2, 2], [3, 3, 3, 3, 3]])
+    s_hat = F.expand_dims(s, axis=0)
+    s_hat = F.repeat(s_hat, repeats=num_samples, axis=0)
+    assert s_hat.shape == (num_samples, batch_size,  5)
+    s_reshaped = F.reshape(s_hat, shape=(
+        batch_size * num_samples, s.shape[-1]))
+    s_reshaped_back = F.reshape(s_reshaped, shape=(
+        num_samples, batch_size, s.shape[-1]))
+    assert np.all(s_hat.array == s_reshaped_back.array)
+
+    array = np.array([[[1], [1], [1]], [[2], [2], [2]], [[3], [3], [3]]])
+    print('array shape: ', array.shape)
+    print('mean axis=0:', np.mean(array, axis=0))
+    print('mean axis=1:', np.mean(array, axis=1))
