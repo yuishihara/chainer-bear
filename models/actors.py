@@ -110,6 +110,10 @@ class VAEActor(_Actor):
 
     def _encode(self, s, a):
         mu, ln_var = self._latent_distribution(s, a)
+        # 2 * ln_std = ln_var
+        # original code is written in ln_std form
+        # Clip for numerical stability
+        ln_var = F.clip(ln_var, x_min=-8, x_max=30)
         return F.gaussian(mu, ln_var), mu, ln_var
 
     def _decode(self, s, z=None):
