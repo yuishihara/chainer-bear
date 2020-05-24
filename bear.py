@@ -98,7 +98,7 @@ class BEAR(object):
             self._vae.to_device(device=device)
             self._lagrange_multiplier.to_device(device=device)
 
-        self._gamma = 0.99
+        self._gamma = gamma
         self._tau = tau
         self._lambda = lmb
         self._epsilon = epsilon
@@ -402,7 +402,6 @@ class BEAR(object):
 
         mmd_squared = \
             sum_k_xx / (n * n) - 2.0 * sum_k_xy / (m * n) + sum_k_yy / (m * m)
-
         return F.sqrt(mmd_squared + 1e-6)
 
     def _compute_laplacian_mmd(self, samples1, samples2, *, sigma=20.0):
@@ -426,7 +425,6 @@ class BEAR(object):
 
         mmd_squared = \
             sum_k_xx / (n * n) - 2.0 * sum_k_xy / (m * n) + sum_k_yy / (m * m)
-
         return F.sqrt(mmd_squared + 1e-6)
 
 
