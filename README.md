@@ -23,4 +23,4 @@ However, both kernel succeeded learning similar policy that scores like the beha
 
 |eval result|lagrange multiplier|mmd loss|vae loss|
 |:---:|:---:|:---:|:---:|
-| ![eval-result](./trained_results/optimal_data/laplacian/eval_result.svg) | ![lagrange](./trained_results/optimal_data/laplacian/lagrange_multiplier.svg)| ![mmd](./trained_results/optimal_data/laplacian/mmd_loss.svg) | ![vae](./trained_results/optimal_data/laplacian/vae_loss.svg)|
+| ![eval-result](./trained_results/optimal_data/laplacian/eval_result.svg){width=200px} | ![lagrange](./trained_results/optimal_data/laplacian/lagrange_multiplier.svg){width=200px}| ![mmd](./trained_results/optimal_data/laplacian/mmd_loss.svg){width=200px} | ![vae](./trained_results/optimal_data/laplacian/vae_loss.svg){width=200px}|
