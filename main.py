@@ -237,7 +237,7 @@ def main():
     parser.add_argument('--epsilon', type=float, default=0.05)
     parser.add_argument('--kernel-sigma', type=float, default=20.0)
     parser.add_argument('--batch-size', type=int, default=100)
-    parser.add_argument('--evaluation-interval', type=float, default=5000)
+    parser.add_argument('--evaluation-interval', type=int, default=5000)
 
     args = parser.parse_args()
 
