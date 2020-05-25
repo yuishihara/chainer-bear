@@ -4,7 +4,7 @@ Reproduction codes of Bootstrapping Error Accumulation Reduction (BEAR) with cha
 
 ## Prerequisites
 
-install [chainer](https://github.com/chainer/chainer) and [tensorboardX](https://github.com/lanpa/tensorboardX) in prior of using the code
+install [chainer](https://github.com/chainer/chainer), [d4rl](https://github.com/rail-berkeley/d4rl) and [tensorboardX](https://github.com/lanpa/tensorboardX) in prior of using the code
 
 ## How to train
 
