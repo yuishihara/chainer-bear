@@ -14,6 +14,8 @@ import numpy as np
 
 import chainer
 
+import d4rl
+
 from bear import BEAR
 from models.actors import VAEActor, MujocoActor
 from models.critics import MujocoCritic
@@ -88,6 +90,19 @@ def load_data_as_replay_buffer(datafile):
         return pickle.load(f)
 
 
+def load_d4rl_as_replay_buffer(env):
+    dataset = env.get_dataset()
+    observations = dataset['observations']
+    data_size = min(observations.shape[0], 1000000)
+
+    states = observations[:data_size - 1]
+    actions = dataset['actions'][:data_size - 1]
+    next_states = observations[1:data_size]
+    rewards = dataset['rewards'][:data_size - 1]
+    non_terminals = 1 - dataset['terminals'][:data_size - 1]
+    return zip(states, actions, rewards, next_states, non_terminals)
+
+
 def start_training(args):
     env = build_env(args)
     test_env = build_env(args, seed=100)
@@ -113,7 +128,10 @@ def start_training(args):
         device=args.gpu)
     load_params(bear, args)
 
-    replay_buffer = load_data_as_replay_buffer(args.datafile)
+    if args.datafile:
+        replay_buffer = load_data_as_replay_buffer(args.datafile)
+    else:
+        replay_buffer = load_d4rl_as_replay_buffer(env)
 
     outdir = prepare_output_dir(args.outdir, args)
     summarydir = prepare_summary_dir(args.summarydir)
@@ -129,8 +147,14 @@ def start_training(args):
                 mean=mean, median=median))
 
             bear.save_models(outdir, prefix=str(timestep))
-            writer.add_scalars(
-                'eval_result', {'mean': mean, 'median': median}, global_step=timestep)
+            if isinstance(env, d4rl.offline_env.OfflineEnv):
+                baseline = env.ref_max_score
+                writer.add_scalars(
+                    'eval_result', {'mean': mean, 'median': median, 'baseline': baseline}, global_step=timestep
+                )
+            else:
+                writer.add_scalars(
+                    'eval_result', {'mean': mean, 'median': median}, global_step=timestep)
 
         if timestep % 100 == 0:
             for (key, value) in status.items():
@@ -205,13 +229,13 @@ def main():
     parser.add_argument('--summarydir', type=str, default='summaries')
 
     # Environment
-    parser.add_argument('--env', type=str, default='Walker2d-v2')
+    parser.add_argument('--env', type=str, default='ant-expert-v0')
 
     # Gpu
     parser.add_argument('--gpu', type=int, default=-1)
 
     # training data
-    parser.add_argument('--datafile', type=str, required=True)
+    parser.add_argument('--datafile', type=str, default=None)
 
     # testing
     parser.add_argument('--test-run', action='store_true')
