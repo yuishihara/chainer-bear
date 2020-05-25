@@ -100,7 +100,7 @@ def load_d4rl_as_replay_buffer(env):
     next_states = observations[1:data_size]
     rewards = dataset['rewards'][:data_size - 1]
     non_terminals = 1 - dataset['terminals'][:data_size - 1]
-    return zip(states, actions, rewards, next_states, non_terminals)
+    return list(zip(states, actions, rewards, next_states, non_terminals))
 
 
 def start_training(args):
