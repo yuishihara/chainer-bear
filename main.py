@@ -147,7 +147,7 @@ def start_training(args):
                 mean=mean, median=median))
 
             bear.save_models(outdir, prefix=str(timestep))
-            if isinstance(env, d4rl.offline_env.OfflineEnv):
+            if isinstance(env.wrapped_env, d4rl.offline_env.OfflineEnv):
                 baseline = env.ref_max_score
                 writer.add_scalars(
                     'eval_result', {'mean': mean, 'median': median, 'baseline': baseline}, global_step=timestep
