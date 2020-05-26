@@ -64,7 +64,7 @@ class MujocoActor(_Actor):
         ln_var = self._linear_ln_var(h)
 
         batch_size = s.shape[0]
-        stddev = F.sqrt(F.exp(ln_var))
+        stddev = F.exp(ln_var * mean.dtype.type(0.5))
         xp = chainer.backend.get_array_module(s)
         noise = chainer.Variable(xp.random.normal(loc=0,
                                                   scale=1,
